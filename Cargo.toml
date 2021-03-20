@@ -10,4 +10,5 @@ edition = "2018"
 base64 = "0.13.0"
 getrandom = "0.2.2"
 hex-literal = "0.3.1"
+khash = {version = "2.0.3", default-features=false}
 openssl = "0.10.32"
