@@ -1,2 +1,6 @@
 /target
 *~
+
+flamegraph.svg
+perf.*
+memory.png
