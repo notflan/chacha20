@@ -1,7 +1,10 @@
+//#![feature(test)]
 
 #![allow(dead_code)]
 
-mod ext; #[macro_use] use ext::*;
+//extern crate test;
+
+#[macro_use] mod ext; #[allow(unused_imports)] use ext::*;
 
 mod key;
 mod cha;
@@ -30,7 +33,7 @@ fn keys() -> Result<(Mode, Key, IV), base64::DecodeError>
 	    let (key, iv) = cha::keygen();
 	    return Ok((Mode::Keygen, key, iv));
 	},
-	_ => {
+	other => {
 	    eprintln!("{} (v{}) - chacha20_poly1305 command line encryption tool",
 		      env!("CARGO_PKG_NAME"),
 		      env!("CARGO_PKG_VERSION"));
@@ -40,12 +43,15 @@ fn keys() -> Result<(Mode, Key, IV), base64::DecodeError>
 	    eprintln!("Usage: {} encrypt [<base64 key>] [<base64 iv>]", prog_name);
 	    eprintln!("Usage: {} decrypt [<base64 key>] [<base64 iv>]", prog_name);
 	    eprintln!("Usage: {} keygen", prog_name);
+	    eprintln!("Usage: {} help", prog_name);
 	    eprintln!();
 	    eprintln!("(Key size is {}, IV size is {})", cha::KEY_SIZE, cha::IV_SIZE);
-	    eprintln!("\nencrypt/decrypt:\n\tIf key and/or IV are not provided, they are generated randomly and printed to stderr in order on one line each");
-	    eprintln!("\tIf the key and/or IV provided's size is lower than the cipher's key/IV size, the rest of the key/IV padded with 0s. If the size is higher, the extra bytes are ignored.");
-	    eprintln!("\nkeygen:\n\tThe key/iv is printed in the same way as auto-generated keys for the en/decryption modes, but to stdout instead of stderr");
-	    std::process::exit(1)
+	    eprintln!("(requires OpenSSL 1.1.0 or newer)");
+	    eprintln!("\nencrypt/decrypt:\n\tIf a key and/or IV are not provided, they are generated randomly and printed to stderr in order on one line each.");
+	    eprintln!("\tIf the key and/or IV provided's size is lower than the cipher's key/IV size, the rest of the key/IV is padded with 0s. If the size is higher, the extra bytes are ignored.");
+	    eprintln!("\nkeygen:\n\tThe key/iv is printed in the same way as auto-generated keys for the en/decryption modes, but to stdout instead of stderr.");
+	    eprintln!("\nhelp:\n\tPrint this message to stderr then exit with code 0");
+	    std::process::exit(if other == Some('h') {0} else {1})
 	}
     };
     

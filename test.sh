@@ -17,7 +17,7 @@ else
 	echo ""
 fi
 
-INPUT_SIZE=4096
+INPUT_SIZE=${INPUT_SIZE:-4096}
 
 echo ">>> Generating random input ($INPUT_SIZE bytes)"
 dd if=/dev/urandom "bs=$INPUT_SIZE" count=1 | base64 > test.txt

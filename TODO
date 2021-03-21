@@ -1,1 +1,0 @@
-Add `b-encrypt` mode to write the outputted bytes in base64 instead of raw bytes, and `b-decrypt` mode to read the inputted bytes in base64 instead of raw bytes

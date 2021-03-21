@@ -15,6 +15,10 @@ pub const BUFFER_SIZE: usize = 32;
 pub type Error = ErrorStack;
 
 /// ChaCha Sink
+///
+/// # Note
+/// When writing, a temporary buffer stored in the structure is used. This buffer is **not** cleared after a write, for efficiency reasons. This may leave sensitive information in the buffer after the write operation.
+/// The `flush()` implementation *does* clear this buffer.
 //#[derive(Debug)]
 pub struct Sink<W>
 {
@@ -36,7 +40,7 @@ impl<W> Sink<W>
 where W: Write
 {
     /// Create a new Chacha Sink stream wrapper
-    pub fn new(stream: W, crypter: Crypter) -> Self
+    #[inline] fn new(stream: W, crypter: Crypter) -> Self
     {
 	Self{stream, crypter, buffer: SmallVec::new()}
     }
@@ -55,69 +59,72 @@ where W: Write
     
 
     /// Consume into the inner stream
-    pub fn into_inner(self) -> W
+    #[inline] pub fn into_inner(self) -> W
     {
 	self.stream
     }
 
     /// Consume into the inner stream and crypter
-    pub fn into_parts(self) -> (W, Crypter)
+    #[inline] pub fn into_parts(self) -> (W, Crypter)
     {
 	(self.stream, self.crypter)
     }
     
     /// The crypter of this instance
-    pub fn crypter(&self) -> &Crypter
+    #[inline] pub fn crypter(&self) -> &Crypter
     {
 	&self.crypter
     }
     
     /// The crypter of this instance
-    pub fn crypter_mut(&mut self) -> &mut Crypter
+    #[inline] pub fn crypter_mut(&mut self) -> &mut Crypter
     {
 	&mut self.crypter
     }
 
     /// The inner stream
-    pub fn inner(&self) -> &W
+    #[inline] pub fn inner(&self) -> &W
     {
 	&self.stream
     }
     
     /// The inner stream
-    pub fn inner_mut(&mut self) -> &mut W
+    #[inline] pub fn inner_mut(&mut self) -> &mut W
     {
 	&mut self.stream
+    }
+
+    /// Perform the cipher transform on this input to the inner buffer, returning the number of bytes updated.
+    fn transform(&mut self, buf: &[u8]) -> Result<usize, ErrorStack>
+    {
+	if buf.len() > self.buffer.len() {
+	    self.buffer.resize(buf.len(), 0);
+	}
+	
+	let n = self.crypter.update(&buf[..], &mut self.buffer[..])?;
+	let _f = self.crypter.finalize(&mut self.buffer[..n])?; // I don't know if this is needed.
+	debug_assert_eq!(_f, 0);
+
+	Ok(n)
     }
 }
 
 impl<W: Write> Write for Sink<W>
 {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-	prog1!{
-	    {
-		self.buffer.write_all(buf).unwrap();
-		let n = self.crypter.update(&buf[..], &mut self.buffer[..])?;
-		self.crypter.finalize(&mut self.buffer[..n])?; // I don't think this is needed
+    #[inline] fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+	let n = self.transform(buf)?;
 
-		self.stream.write(&self.buffer[..n])
-	    },
-	    self.buffer.clear();
-	}
+	self.stream.write(&self.buffer[..n])
+	    
     }
-    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-	prog1!{
-	    {
-		self.buffer.write_all(buf).unwrap();
-		let n = self.crypter.update(&buf[..], &mut self.buffer[..])?;
-		self.crypter.finalize(&mut self.buffer[..n])?;
+    #[inline] fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+	let n = self.transform(buf)?;
 
-		self.stream.write_all(&self.buffer[..n])
-	    },
-	    self.buffer.clear();
-	}
+	self.stream.write_all(&self.buffer[..n])
     }
     #[inline] fn flush(&mut self) -> io::Result<()> {
+	self.buffer.clear();
+	
 	self.stream.flush()
     }
 }
@@ -174,4 +181,5 @@ mod tests
 	assert_eq!(&dec_buffer[..], INPUT.as_bytes());
     }
 }
+
 
