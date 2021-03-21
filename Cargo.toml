@@ -1,7 +1,7 @@
 [package]
 name = "chacha20"
 description = "chacha20_poly1305 encryption tool"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Avril <flanchan@cumallover.me>"]
 edition = "2018"
 
