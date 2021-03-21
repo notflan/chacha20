@@ -11,7 +11,7 @@ use openssl::{
 };
 use smallvec::SmallVec;
 
-pub const BUFFER_SIZE: usize = 1024;
+pub const BUFFER_SIZE: usize = 32;
 pub type Error = ErrorStack;
 
 /// ChaCha Sink
@@ -52,6 +52,7 @@ where W: Write
     {
 	Ok(Self::new(stream, cha::decrypter(key, iv)?))
     }
+    
 
     /// Consume into the inner stream
     pub fn into_inner(self) -> W
@@ -126,7 +127,7 @@ mod tests
 {
     use super::*;
 
-    const INPUT: &'static str = "Hello world!";
+    const INPUT: &'static str = "Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!Hello world!";
 
     fn enc_stream(input: impl AsRef<[u8]>, key: Key, iv: IV) -> Sink<Vec<u8>>
     {
@@ -155,6 +156,7 @@ mod tests
     #[test]
     fn dec()
     {
+	println!(">>> Sink's size with ref is {}", std::mem::size_of::<Sink<&mut Vec<u8>>>());
 	let (key, iv) = cha::keygen();
 	eprintln!("Input unencrypted: {}", INPUT.hex());
 
