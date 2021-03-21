@@ -38,7 +38,7 @@ The same but with text instead of binary ciphertexts
 
 ``` shell
 $ echo "Hello world!" | chacha20 e 2>keys.cck | base64 > output.cc20.b64
-$ base64 --decode output.cc20.b64 | chacha20 d $(cat keys.cck)
+$ cat output.cc20.b64 | base64 --decode | chacha20 d $(cat keys.cck)
 Hello world!
 ```
 
