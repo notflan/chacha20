@@ -114,3 +114,9 @@ impl<I: Iterator<Item = u8> + Clone> fmt::Display for HexStringIter<I>
 	self.clone().consume(f)
     }
 }
+
+#[macro_export] macro_rules! prog1 {
+    ($first:expr, $($rest:expr);+ $(;)?) => {
+	($first, $( $rest ),+).0
+    }
+}

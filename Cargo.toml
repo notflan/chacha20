@@ -7,8 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-base64 = "0.13.0"
-getrandom = "0.2.2"
-hex-literal = "0.3.1"
-khash = {version = "2.0.3", default-features=false}
-openssl = "0.10.32"
+base64 = "0.13"
+getrandom = "0.2"
+hex-literal = "0.3"
+khash = {version = "2.0.4", default-features=false}
+openssl = "0.10"
+smallvec = {version = "1.6.1", features=["write", "union"]}

@@ -1,10 +1,11 @@
 
 #[macro_use] extern crate hex_literal;
 
-mod ext; use ext::*;
+mod ext; #[macro_use] use ext::*;
 
 mod key;
 mod cha;
+mod stream;
 
 use key::{Key, IV};
 
@@ -19,7 +20,10 @@ fn encrypt((key, iv): &(Key, IV), input: impl AsRef<[u8]>) -> Result<String, ope
 
     let n = enc.update(&input[..], &mut output[..])?;
     eprintln!("(enc) Written {} bytes", n);
-    enc.finalize(&mut output[..n])?;
+    
+    println!(">> {}", (&output[..n]).hex());
+    assert!(enc.finalize(&mut output[..n])? == 0);
+    println!(">> {}", (&output[..n]).hex());
 
     Ok(base64::encode(&output[..n]))
 }
@@ -35,7 +39,11 @@ fn decrypt((key, iv): &(Key, IV), input: impl AsRef<str>) -> Result<Vec<u8>, ope
 
     let n = dec.update(&input[..], &mut output[..])?;
     eprintln!("(dec) Written {} bytes", n);
-    dec.finalize(&mut output[..n])?;
+
+    println!(">> {}", (&output[..n]).hex());
+    assert!(dec.finalize(&mut output[..n])? == 0);
+//    assert!(dec.finalize(&mut output[..n])? == 0);
+    println!(">> {}", (&output[..n]).hex());
 
     output.truncate(n);
     Ok(output)
