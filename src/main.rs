@@ -92,8 +92,8 @@ fn main() {
 	    output.flush().expect("Failed to flush stdout");
 	},
 	Mode::Decrypt => {
-	    let mut output = stream::Sink::decrypt(stdout.lock(), key, iv).expect("Failed to create encrypter");
-	    std::io::copy(&mut input.lock(), &mut output).expect("Failed to encrypt");
+	    let mut output = stream::Sink::decrypt(stdout.lock(), key, iv).expect("Failed to create decrypter");
+	    std::io::copy(&mut input.lock(), &mut output).expect("Failed to decrypt");
 	    output.flush().expect("Failed to flush stdout");
 	},
 	Mode::Keygen => {
