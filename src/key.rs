@@ -132,7 +132,7 @@ impl str::FromStr for Key
 
 	let mut this = Self::default();
 	let sz = std::cmp::min(KEY_SIZE, buffer.len());
-	this.0.copy_from_slice(&buffer[..sz]);
+	(&mut this.0[..sz]).copy_from_slice(&buffer[..sz]);
 	Ok(this)
     }
 }
@@ -147,7 +147,7 @@ impl str::FromStr for IV
 
 	let mut this = Self::default();
 	let sz = std::cmp::min(IV_SIZE, buffer.len());
-	this.0.copy_from_slice(&buffer[..sz]);
+	(&mut this.0[..sz]).copy_from_slice(&buffer[..sz]);
 	Ok(this)
     }
 }
