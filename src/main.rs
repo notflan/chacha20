@@ -1,6 +1,4 @@
 
-#[macro_use] extern crate hex_literal;
-
 mod ext; #[macro_use] use ext::*;
 
 mod key;
