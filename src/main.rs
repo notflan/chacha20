@@ -41,9 +41,10 @@ fn keys() -> Result<(Mode, Key, IV), base64::DecodeError>
 	    eprintln!("Usage: {} decrypt [<base64 key>] [<base64 iv>]", prog_name);
 	    eprintln!("Usage: {} keygen", prog_name);
 	    eprintln!();
-	    eprintln!("(Key size is {}, IV size is {})\n", cha::KEY_SIZE, cha::IV_SIZE);
-	    eprintln!("encrypt/decrypt:\n\tIf key and/or IV are not provided, they are generated randomly and printed to stderr in order on one line each");
-	    eprintln!("keygen:\n\tThe key/iv is printed in the same way as auto-generated keys for the en/decryption modes, but to stdout instead of stderr");
+	    eprintln!("(Key size is {}, IV size is {})", cha::KEY_SIZE, cha::IV_SIZE);
+	    eprintln!("\nencrypt/decrypt:\n\tIf key and/or IV are not provided, they are generated randomly and printed to stderr in order on one line each");
+	    eprintln!("\tIf the key and/or IV provided's size is lower than the cipher's key/IV size, the rest of the key/IV padded with 0s. If the size is higher, the extra bytes are ignored.");
+	    eprintln!("\nkeygen:\n\tThe key/iv is printed in the same way as auto-generated keys for the en/decryption modes, but to stdout instead of stderr");
 	    std::process::exit(1)
 	}
     };

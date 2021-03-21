@@ -131,7 +131,8 @@ impl str::FromStr for Key
 	base64::decode_config_buf(s.as_bytes(), base64::STANDARD, &mut buffer)?;
 
 	let mut this = Self::default();
-	this.0.copy_from_slice(&buffer[..]);
+	let sz = std::cmp::min(KEY_SIZE, buffer.len());
+	this.0.copy_from_slice(&buffer[..sz]);
 	Ok(this)
     }
 }
@@ -145,7 +146,8 @@ impl str::FromStr for IV
 	base64::decode_config_buf(s.as_bytes(), base64::STANDARD, &mut buffer)?;
 
 	let mut this = Self::default();
-	this.0.copy_from_slice(&buffer[..]);
+	let sz = std::cmp::min(IV_SIZE, buffer.len());
+	this.0.copy_from_slice(&buffer[..sz]);
 	Ok(this)
     }
 }
