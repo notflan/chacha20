@@ -11,7 +11,7 @@ edition = "2018"
 base64 = "0.13"
 getrandom = "0.2"
 openssl = "0.10"
-smallvec = {version = "1.6.1", features=["write", "union"]}
+smallvec = {version = "1.6", features=["write", "union"]}
 
 
 [dev-dependencies]
