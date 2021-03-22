@@ -93,6 +93,36 @@ where W: Write
     {
 	&mut self.stream
     }
+    
+    /// Clear the internal buffer while keeping it allocated for further use.
+    ///
+    /// This does not affect operations at all, all it does is 0 out the left-over temporary buffer from the last operation(s).
+    pub fn prune(&mut self)
+    {
+	#[cfg(feature="explicit_clear")]
+	{
+	    use std::ffi::c_void;
+	    extern "C" {
+		fn explicit_bzero(_: *mut c_void, _:usize);
+	    }
+	    unsafe {
+		explicit_bzero(self.buffer.as_mut_ptr() as *mut c_void, self.buffer.len());
+
+		#[cfg(nightly)] 
+		if cfg!(target_arch = "x86_64") || cfg!(target_arch = "x86"){
+		    asm!(
+			"clflush [{}]",
+			in(reg) self.buffer.as_mut_ptr()
+		    );
+		}
+	    }
+	    return;
+	}
+	#[cfg(not(feature="explicit_clear"))] 
+	unsafe {
+	    std::ptr::write_bytes(self.buffer.as_mut_ptr(), 0, self.buffer.len());
+	}
+    }
 
     /// Perform the cipher transform on this input to the inner buffer, returning the number of bytes updated.
     fn transform(&mut self, buf: &[u8]) -> Result<usize, ErrorStack>
@@ -123,6 +153,8 @@ impl<W: Write> Write for Sink<W>
 	self.stream.write_all(&self.buffer[..n])
     }
     #[inline] fn flush(&mut self) -> io::Result<()> {
+	#[cfg(feature="explicit_clear")] self.prune();
+	
 	self.buffer.clear();
 	
 	self.stream.flush()
@@ -179,6 +211,41 @@ mod tests
 	    eprintln!("Output decrypted: {}", stream.inner().hex());
 	}
 	assert_eq!(&dec_buffer[..], INPUT.as_bytes());
+    }
+    
+    /// Checks if explicit clear is actually clearing.
+    #[cfg(feature="explicit_clear")] 
+    #[test]
+    fn remainder()
+    {
+	let mut dec_buffer = Vec::new();
+
+	let (buf, off, _s) = {
+	    let (key, iv) = cha::keygen();
+
+	    let input = enc_stream(INPUT.as_bytes(), key.clone(), iv.clone()).into_inner();
+
+	    {
+		let mut stream = Sink::decrypt(&mut dec_buffer, key, iv).expect("sink::rem");
+
+		stream.write_all(&input[..]).unwrap();
+
+		let by = stream.buffer[0];
+		//stream.prune();
+		stream.flush().unwrap();
+		(by, (stream.buffer.as_ptr() as u64), stream)
+	    }
+	};
+
+	// Check to see if the buffer remains in our process's memory.
+	use std::fs::OpenOptions;
+	use std::io::{Seek, SeekFrom, Read};
+	let mut file = OpenOptions::new().read(true).open("/proc/self/mem").unwrap();
+
+	file.seek(SeekFrom::Start(off)).unwrap();
+	let mut chk = [0u8; 10];
+	file.read_exact(&mut chk).unwrap();
+	assert!(buf != chk[0]);
     }
 }
 
