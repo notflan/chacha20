@@ -14,7 +14,7 @@ To enable explicit buffer clearing, compile with the option `--features explicit
 
 The `explicit_clear` feature forces any temporary work buffers to be zeroed out in memory when the corresponding stream is flushed itself. 
 Unless being built with the Rust nightly toolchain, it requires the nonstandard glibc extension `explicit_bzero(void*, size_t)` to build.
-On x86 targets with the Rust nightly toolchain installed, it will also force a cache flush of the corresponding memory address when the stream is flushed.
+On x86 targets with the Rust nightly toolchain, it will also force a cache flush of the corresponding memory address after the zeroing.
 This is *usually not needed*, and can cause a slowdown; but it prevents any lingering data being left in the buffer.
 The unit test `remainder()` checks the process' memory map for leftover data in the working buffer when testing with this feature enabled. It is still unlikely data will remain even without this feature, depending on your system; you should only use it if you are very paranoid.
 
