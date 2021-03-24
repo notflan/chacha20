@@ -57,7 +57,7 @@ pub trait HexStringSliceIterExt
 }
 
 impl<S> HexStringSliceIterExt for S
-    where S: AsRef<[u8]>
+where S: AsRef<[u8]>
 {
     fn hex(&self) -> HexStringSliceIter<'_>
     {
@@ -118,5 +118,27 @@ impl<I: Iterator<Item = u8> + Clone> fmt::Display for HexStringIter<I>
 #[macro_export] macro_rules! prog1 {
     ($first:expr, $($rest:expr);+ $(;)?) => {
 	($first, $( $rest ),+).0
+    }
+}
+
+#[cfg(feature="explicit_clear")]
+#[inline(never)]
+pub fn explicit_prune(buffer : &mut[u8]) {
+    use std::ffi::c_void;
+    unsafe {
+	std::ptr::write_bytes(buffer.as_mut_ptr() as * mut c_void, 0, buffer.len());
+	#[cfg(nightly)]
+	if cfg!(target_arch = "x86_64") || cfg!(target_arch = "x86") {
+            asm!("clflush [{}]", in(reg)buffer.as_mut_ptr());
+	} else {
+            asm!("")
+	}
+	#[cfg(not(nightly))] {
+	    extern "C" {
+		fn explicit_bzero(_: *mut c_void, _:usize);
+	    }
+	    explicit_bzero(buffer.as_mut_ptr() as *mut c_void, buffer.len());
+	    
+	}
     }
 }
