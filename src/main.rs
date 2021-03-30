@@ -30,10 +30,7 @@ fn keys() -> Result<(Mode, Key, IV), base64::DecodeError>
     {
 	Some('e') => Mode::Encrypt,
 	Some('d') => Mode::Decrypt,
-	Some('k') => {
-	    let (key, iv) = cha::keygen();
-	    return Ok((Mode::Keygen, key, iv));
-	},
+	Some('k') => Mode::Keygen,
 	other => {
 	    eprintln!("{} (v{}) - chacha20_poly1305 command line encryption tool",
 		      env!("CARGO_PKG_NAME"),
@@ -43,14 +40,14 @@ fn keys() -> Result<(Mode, Key, IV), base64::DecodeError>
 	    eprintln!();
 	    eprintln!("Usage: {} encrypt [<base64 key>] [<base64 iv>]", prog_name);
 	    eprintln!("Usage: {} decrypt [<base64 key>] [<base64 iv>]", prog_name);
-	    eprintln!("Usage: {} keygen", prog_name);
+	    eprintln!("Usage: {} keygen [<base64 key>] [<base64 iv>]", prog_name);
 	    eprintln!("Usage: {} help", prog_name);
 	    eprintln!();
 	    eprintln!("(Key size is {}, IV size is {})", cha::KEY_SIZE, cha::IV_SIZE);
 	    eprintln!("(requires OpenSSL 1.1.0 or newer)");
 	    eprintln!("\nencrypt/decrypt:\n\tIf a key and/or IV are not provided, they are generated randomly and printed to stderr in order on one line each.");
 	    eprintln!("\tIf the key and/or IV provided's size is lower than the cipher's key/IV size, the rest of the key/IV is padded with 0s. If the size is higher, the extra bytes are ignored.");
-	    eprintln!("\nkeygen:\n\tThe key/iv is printed in the same way as auto-generated keys for the en/decryption modes, but to stdout instead of stderr.");
+	    eprintln!("\nkeygen:\n\tThe key/iv is printed in the same way as auto-generated keys for the en/decryption modes, but to stdout instead of stderr. If a key is given as parameter, the key is not printed. If the iv is given as a parameter also, nothing is printed.");
 	    eprintln!("\nhelp:\n\tPrint this message to stderr then exit with code 0");
 	    std::process::exit(if other == Some('h') {0} else {1})
 	}
@@ -60,7 +57,11 @@ fn keys() -> Result<(Mode, Key, IV), base64::DecodeError>
 	Some(key) => key.parse()?,
 	None => {
 	    let key = Key::new();
-	    eprintln!("{}", base64::encode(&key));
+	    if mode == Mode::Keygen {
+		println!("{}", base64::encode(&key));
+	    } else {
+		eprintln!("{}", base64::encode(&key));
+	    }
 	    key
 	},
     };
@@ -68,7 +69,11 @@ fn keys() -> Result<(Mode, Key, IV), base64::DecodeError>
 	Some(iv) => iv.parse()?,
 	None => {
 	    let iv = IV::new();
-	    eprintln!("{}", base64::encode(&iv));
+	    if mode == Mode::Keygen {
+		println!("{}", base64::encode(&iv));
+	    } else {
+		eprintln!("{}", base64::encode(&iv));
+	    }
 	    iv
 	},
     };
@@ -98,8 +103,8 @@ fn main() {
 	    output.flush().expect("Failed to flush stdout");
 	},
 	Mode::Keygen => {
-	    println!("{}", base64::encode(&key));
-	    println!("{}", base64::encode(&iv));
+	    //println!("{}", base64::encode(&key));
+	    //println!("{}", base64::encode(&iv));
 	},
     }
 }
