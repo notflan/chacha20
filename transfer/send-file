@@ -1,0 +1,19 @@
+#!/bin/bash
+# Usage: send-file <port> <key> <file>
+
+PORT=${1:-4443}
+KEY="$2"
+FILE=$3
+
+IV=$(chacha20 keygen $KEY)
+
+# Send the key and IV
+KEY_IV=$( (echo $KEY && echo $IV) | gpg --encrypt --armour)
+nc -l -p $PORT || exit 1 <<< $KEY_IV
+
+echo "Sending file"
+
+# Send the file
+cat $FILE | gzip | chacha20 e $KEY $IV | nc -l -p $PORT || exit 2
+
+echo "Sent"

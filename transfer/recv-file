@@ -1,0 +1,17 @@
+#!/bin/bash
+# Usage: recv-file <server> <port> <file>
+
+SERVER=$1
+PORT=${2:-4443}
+FILE=$3
+
+# Recv the key and IV
+$KEY_IV=$(nc -w 3 $SERVER $PORT | gpg --decrypt || exit 1)
+
+echo "Received key and iv: $KEY_IV"
+
+echo "Reading file"
+
+nc -w 3 $SERVER $PORT | chacha20 d $KEY_IV | gunzip > $FILE || exit 2
+
+echo "Read"
