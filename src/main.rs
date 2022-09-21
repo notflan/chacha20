@@ -81,6 +81,27 @@ fn keys() -> Result<(Mode, Key, IV), base64::DecodeError>
     Ok((mode, key, iv))
 }
 
+const USE_MMAP: bool = if cfg!(feature="mmap") {
+    true
+} else {
+    false
+};
+
+#[cfg(feature="mmap")]
+mod mapped;
+
+#[allow(unreachable_code)]
+fn try_mmap(decrypt: bool, key: Key, iv: IV) -> std::io::Result<i32>
+{
+    #[cfg(feature="mmap")] return mapped::try_process(if decrypt {
+	cha::decrypter(key, iv).expect("Failed to create decrypter")
+    } else {
+	cha::encrypter(key, iv).expect("Failed to create encrypter")
+    }).map(|_| 0);
+    
+    unreachable!("Built without feature `mmap`, but still tried to call into it. This is a bug")
+}
+
 fn main() {
 
     let (mode, key, iv) = keys().expect("Failed to read keys from argv (base64)");
@@ -88,14 +109,26 @@ fn main() {
     let stdout = std::io::stdout();
     let input = std::io::stdin();
 
+    // Attempt a mapped solution
+    if USE_MMAP && mode != Mode::Keygen {
+	match try_mmap(mode == Mode::Decrypt, key, iv) {
+	    Ok(0) => return,
+	    Ok(n) => std::process::exit(n),
+	    Err(err) => if cfg!(debug_assertions) {
+		eprintln!("Failed to mmap input or output for processing, falling back to stream: {}", err);
+	    }
+	}
+    } 
     // Streaming
     use std::io::Write;
     match mode 
     {
 	Mode::Encrypt => {
+	    
 	    let mut output = stream::Sink::encrypt(stdout.lock(), key, iv).expect("Failed to create encrypter");
 	    std::io::copy(&mut input.lock(), &mut output).expect("Failed to encrypt");
 	    output.flush().expect("Failed to flush stdout");
+	    
 	},
 	Mode::Decrypt => {
 	    let mut output = stream::Sink::decrypt(stdout.lock(), key, iv).expect("Failed to create decrypter");

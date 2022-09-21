@@ -3,17 +3,21 @@ name = "chacha20"
 description = "chacha20_poly1305 encryption tool"
 version = "2.0.0"
 authors = ["Avril <flanchan@cumallover.me>"]
-edition = "2018"
+edition = "2021"
 license = "gpl-3.0-or-later"
 
 [features]
+default = ["mmap"]
 
+# Try to map inputs/outputs before using buffers
+mmap = ["libc"]
 # Explicitly clear buffers and cache after use
 explicit_clear = []
 
 [dependencies]
 base64 = "0.13"
 getrandom = "0.2"
+libc = { version = "0.2.133", optional = true }
 openssl = "0.10"
 smallvec = {version = "1.6", features=["union"]}
 
