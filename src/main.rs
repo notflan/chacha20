@@ -1,8 +1,10 @@
-#![cfg_attr(nightly, feature(asm))] 
+//#![cfg_attr(nightly, feature(asm))] 
+
 
 
 #![allow(dead_code)]
 
+#[macro_use] extern crate lazy_static;
 //extern crate test;
 
 #[macro_use] mod ext; #[allow(unused_imports)] use ext::*;

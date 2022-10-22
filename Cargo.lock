@@ -38,9 +38,12 @@ version = "2.0.0"
 dependencies = [
  "base64",
  "getrandom",
+ "lazy_static",
  "libc",
+ "mapped-file",
  "openssl",
  "rustc_version",
+ "smallmap",
  "smallvec",
 ]
 
@@ -71,10 +74,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy_static"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
+
+[[package]]
 name = "libc"
 version = "0.2.133"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0f80d65747a3e43d1596c7c5492d95d5edddaabd45a7fcdb02b95f644164966"
+
+[[package]]
+name = "mapped-file"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0228d78d6433a3ed6b3ac9b91aa6e4dac1094ac841fea554779b97fa4c111db"
+dependencies = [
+ "lazy_static",
+ "libc",
+ "memchr",
+]
+
+[[package]]
+name = "memchr"
+version = "2.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 
 [[package]]
 name = "once_cell"
@@ -138,6 +164,15 @@ name = "semver-parser"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
+
+[[package]]
+name = "smallmap"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2df0ae8eb5af9e6e00be6ba531cc6860ba93d5226d6d1d4f80ead510a5d6296e"
+dependencies = [
+ "rustc_version",
+]
 
 [[package]]
 name = "smallvec"

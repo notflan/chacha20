@@ -17,8 +17,11 @@ explicit_clear = []
 [dependencies]
 base64 = "0.13"
 getrandom = "0.2"
+lazy_static = "1.4.0"
 libc = { version = "0.2.133", optional = true }
+mapped-file = { version = "0.0.2", features = ["file"] }
 openssl = "0.10"
+smallmap = "1.4.0"
 smallvec = {version = "1.6", features=["union"]}
 
 [build-dependencies]
