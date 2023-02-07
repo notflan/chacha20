@@ -13,6 +13,7 @@ use std::{
     },
     borrow::{BorrowMut, Cow},
     convert::{TryFrom, TryInto,},
+    fmt, error,
 };
 use libc::{
     mmap, munmap, madvise, MAP_FAILED,
@@ -62,7 +63,7 @@ pub fn raw_file_size(fd: &(impl AsRawFd + ?Sized)) -> io::Result<u64>
 #[inline]
 fn try_truncate(fd: &(impl AsRawFd + ?Sized), to: u64) -> io::Result<()>
 {
-    //use libc::ftruncate;
+    use libc::ftruncate;
     let to = to.try_into().map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     match unsafe { ftruncate(fd.as_raw_fd(), to) } {
 	0 => Ok(()),
@@ -152,7 +153,7 @@ fn try_map_to<T: AsRawFd + ?Sized>(file: &T, file_size: usize) -> bool
     }
     // Grow file
     unsafe {
-	libc::ftruncate(file.as_raw_fd(), file_size) == 0
+	libc::ftruncate(file.as_raw_fd(), if file_size > i64::MAX as u64 { i64::MAX } else { file_size as i64 }) == 0
     }
 }
 
@@ -169,28 +170,51 @@ fn translate_hugetlb_size(size: usize) -> mapped_file::hugetlb::HugePage
     const MB: usize = 1024*1024;
     const GB: usize = 1024 * MB;
     match size {
-	0..MB => mapped_file::hugetlb::HugePage::Smallest,
-	MB..GB => mapped_file::hugetlb::HugePage::Selected(check_func),
+	0..=MB => mapped_file::hugetlb::HugePage::Smallest,
+	MB..=GB => mapped_file::hugetlb::HugePage::Selected(check_func),
 	very_high => mapped_file::hugetlb::HugePage::Largest,
     }
 }
 
 /// Create and map a temporary memory file of this size.
 ///
-/// This function may optionally choose to huge hugepages if `size` is large enough
+/// # Hugetlb
+/// This function may optionally choose to huge hugepages if `size` is large enough and `HUGE` is set to true.
+/// If you want to read/write from this file too, call `create_sized_temp_mapping_at::<false>()` instead, or `create_sized_basic_mapping()`.
+#[inline]
 fn create_sized_temp_mapping(size: usize) -> io::Result<(MappedFile<MemoryFile>, bool)>
+{
+ create_sized_temp_mapping_at::<true>(size)
+}
+/// Create and map a temporary memory file of this size.
+///
+/// # Hugetlb
+/// This function may optionally choose to huge hugepages if `size` is large enough and `HUGE` is set to true.
+/// If you want to read/write from this file too, call with `HUGE = false`.
+fn create_sized_temp_mapping_at<const HUGE: bool>(size: usize) -> io::Result<(MappedFile<MemoryFile>, bool)>
 {
     const HUGETLB_THRESH: usize = 1024 * 1024; // 1MB
     let file = match size {
-	0 => MemoryFile::new(),
-	0..HUGETLB_THRESH => MemoryFile::with_size(size),
-	size => {
+	0..=HUGETLB_THRESH => MemoryFile::with_size(size),
+	size if HUGE => {
 	    let hugetlb = translate_hugetlb_size(size);
-	    let file = MemoryFile::with_size_hugetlb(size, hugetlb)?;
+	    let file = if let Some(flag) =hugetlb.compute_huge() {
+		MemoryFile::with_size_hugetlb(size, flag)?
+	    } else {
+		MemoryFile::with_size(size)?
+	    };
 	    return MappedFile::new(file, size, Perm::ReadWrite, Flags::Shared.with_hugetlb(hugetlb)).map(|x| (x, true));
-	},  
+	},
+	0 | 
+	_ => MemoryFile::new(),
     }?;
     MappedFile::new(file, size, Perm::ReadWrite, Flags::Shared).map(|x| (x, false))
+}
+
+#[inline(always)] 
+fn create_sized_basic_mapping(size: usize) -> io::Result<MappedFile<MemoryFile>>
+{
+    create_sized_temp_mapping(size).map(|(x, _)| x)
 }
 
 type MappedMemoryFile = MappedFile<mapped_file::file::memory::MemoryFile>;
@@ -232,7 +256,7 @@ impl<T: io::Read+AsRawFd, U: io::Write+AsRawFd> OpTable<T, U>
 		    let _ = input.advise(mapped_file::Advice::Sequential, Some(true));
 		    let _ = output.advise(mapped_file::Advice::Sequential, None);
 		},
-	    Self::Input(input, mem)
+	    Self::Input(input, mem, _)
 		=> {
 		    let _ = input.advise(mapped_file::Advice::Sequential, Some(true));
 		    let _ = mem.advise(mapped_file::Advice::Sequential, None);
@@ -240,7 +264,7 @@ impl<T: io::Read+AsRawFd, U: io::Write+AsRawFd> OpTable<T, U>
 	    Self::Output(input, mem, _)
 		=> {
 		    let _ = mem.advise(mapped_file::Advice::Sequential, Some(true));
-		    std::io::copy(&mut input, &mut mem)?;
+		    std::io::copy(&mut input, &mut &mut mem[..])?; //TODO: When mapped_file is updated to add `inner_mut()`, use that instead of the mapped array as destination (gives access to splice et all.)
 		},
 	    _ => (),
 	}
@@ -250,7 +274,7 @@ impl<T: io::Read+AsRawFd, U: io::Write+AsRawFd> OpTable<T, U>
     {
 	match self {
 	    Self::Both(_, output) => drop(output.flush(mapped_file::Flush::Wait)?),
-	    Self::Input(_, mut mem, mut output) => drop(std::io::copy(&mut mem, &mut output)?),
+	    Self::Input(_, mut mem, mut output) => drop(std::io::copy(&mut &mem[..], &mut output)?), //TODO: When mapped_file is updated to add `inner_mut()`, use that instead of the mapped array as source (gives access to splice et all.)
 	    Self::Output(_, _, mut output) => drop(output.flush(mapped_file::Flush::Wait)?),
 	    Self::Neither(_, stream) => stream.flush()?,
 	    _ => (),
@@ -298,7 +322,7 @@ impl<T: io::Read+AsRawFd, U: io::Write+AsRawFd> OpTable<T, U>
 			}
 		    };
 		    ($mem:expr, $size:expr) => {
-			$mem.map(|x| Cow::Borrowed(&mut x[..])).unwrap_or_else(|| Cow::Owned(vec![0u8; $size]));
+			$mem.map(|x| Cow::Borrowed(&mut x[..])).unwrap_or_else(|| Cow::Owned(vec![0u8; $size]))
 		    }
 		}
 		let mut _mem = try_allocmem!(BUFFER_SIZE);
@@ -324,8 +348,8 @@ impl<T: io::Read+AsRawFd, U: io::Write+AsRawFd> OpTable<T, U>
 fn sized_then_or<T: AsRawFd, U, F>(stream: T, trans: F) -> Result<U, T>
     where F: FnOnce(T, usize) -> U
 {
-    let Some(size): usize = raw_file_size(&stream).and_then(u64::into).ok() else { return Err(stream); };
-    Some(trans(stream, trans))
+    let Some(size) = raw_file_size(&stream).ok().and_then(|x| u64::try_into(x).ok()) else { return Err(stream); };
+    Ok(trans(stream, size))
 }
 
 #[inline] 
@@ -344,8 +368,69 @@ fn map_size_or<T: AsRawFd, U, F>(stream: T, size: usize, trans: F) -> Result<U, 
     }
 }
 
+#[derive(Debug)]
+    #[non_exhaustive]
+pub enum ProcessErrorKind
+{
+    Unknown,
+    IO(io::Error),
+}
+
+impl fmt::Display for ProcessErrorKind
+{
+    #[inline(always)] 
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+	match self {
+	    Self::IO(io) => write!(f, "io error: {}", io),
+	    _ => f.write_str("unknown"),
+	}
+    }
+}
+
+pub struct ProcessError {
+    kind: ProcessErrorKind,
+    context: Option<Box<Dynamic>>,
+}
+
+impl fmt::Debug for ProcessError
+{
+        #[inline] 
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+	f.debug_struct("ProcessError")
+	    .field("kind", &self.kind)
+	    .finish_non_exhaustive()
+    }
+}
+impl error::Error for ProcessError{}
+impl fmt::Display for ProcessError
+{
+    #[inline] 
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+	f.write_str("fatal processing error: ")?;
+	self.kind.fmt(f)
+    }
+}
+
+
+impl From<io::Error> for ProcessError
+{
+    #[inline] 
+    fn from(from: io::Error) -> Self
+    {
+	Self {
+	    kind: ProcessErrorKind::IO(from),
+	    context: None,
+	}
+    }
+}
+
+
+
 /// Create an optimised call table for the cryptographic transformation from `from` to `to`.
-pub fn create_process<T: AsRawFd, U: AsRawFd>(from: T, to: U) -> OpTable<T, U>
+pub fn try_create_process<T: AsRawFd, U: AsRawFd>(from: T, to: U) -> Result<OpTable<T, U>, ProcessError>
 {
     let (input, buffsz) = match sized_then_or(from, |input, input_size| {
 	(match MappedFile::try_new(input, input_size, Perm::Readonly, Flags::Private) {
@@ -358,7 +443,7 @@ pub fn create_process<T: AsRawFd, U: AsRawFd>(from: T, to: U) -> OpTable<T, U>
     };
     
     let (output, outsz) = {
-	if let Some(buffsz) = buffsz.or_else(|| raw_file_size(&to).ok()) {
+	if let Some(buffsz) = buffsz.or_else(|| raw_file_size(&to).ok().and_then(|x| usize::try_from(x).ok())) {
 	    match map_size_or(to, buffsz, |mmap, size| {
 		(mmap, size)
 	    }) {
@@ -366,17 +451,22 @@ pub fn create_process<T: AsRawFd, U: AsRawFd>(from: T, to: U) -> OpTable<T, U>
 		Err(e) => (Err(e), if buffsz == 0 { None } else { Some(buffsz) }),
 	    }
 	} else {
-	    Err((to, None))
+	    (Err(to), None)
 	}
     };
 
-    match ((input, buffsz), (output, outsz)) {
+    Ok(match ((input, buffsz), (output, outsz)) {
 	// Check for all combinations of mapping successes or failures
 	((Ok(min), isz), (Ok(mout), osz)) => OpTable::Both(min, mout),
-	((Ok(min), isz), (Err(sout), osz)) => OpTable::Input(min, create_sized_temp_mapping(isz.or(osz)), sout),
-	((Err(sin), isz), (Ok(mout), osz)) => OpTable::Output(sin, create_sized_temp_mapping(osz.or(isz)), mout),
-	((Err(sin, isz), (Err(sout), osz))) => OpTable::Neither(sin, sout),
-    }
+	((Ok(min), isz), (Err(sout), osz)) => OpTable::Input(min, create_sized_temp_mapping(isz.or(osz).unwrap_or(0))?.0, sout),
+	((Err(sin), isz), (Ok(mout), osz)) => OpTable::Output(sin, create_sized_basic_mapping(osz.or(isz).unwrap_or(0))?, mout),
+	((Err(sin), isz), (Err(sout), osz)) => OpTable::Neither(sin, sout),
+    })
+}
+
+pub fn try_process(_mode: impl BorrowMut<Crypter>) -> io::Result<io::Result<()>>
+{
+    todo!("use `try_create_process()`")
 }
 
     #[cfg(feature="try_process-old")] 

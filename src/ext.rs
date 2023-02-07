@@ -11,6 +11,11 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct HexStringIter<I>(I, [u8; 2]);
 
+/// Represents any value that can be sent and shared across threads
+pub type Dynamic = dyn std::any::Any + Send + Sync + 'static;
+/// Represents any thread-local value
+pub type LocalDynamic = dyn std::any::Any + 'static;
+
 impl<I: Iterator<Item = u8>> HexStringIter<I>
 {
     /// Write this hex string iterator to a formattable buffer
