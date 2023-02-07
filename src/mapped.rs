@@ -11,7 +11,7 @@ use std::{
 	self,
 	MaybeUninit,
     },
-    borrow::{BorrowMut, Cow},
+    borrow::{BorrowMut, Cow, Borrow},
     convert::{TryFrom, TryInto,},
     fmt, error,
 };
@@ -264,7 +264,7 @@ impl<T: io::Read+AsRawFd, U: io::Write+AsRawFd> OpTable<T, U>
 	    Self::Output(input, mem, _)
 		=> {
 		    let _ = mem.advise(mapped_file::Advice::Sequential, Some(true));
-		    std::io::copy(&mut input, &mut &mut mem[..])?; //TODO: When mapped_file is updated to add `inner_mut()`, use that instead of the mapped array as destination (gives access to splice et all.)
+		    std::io::copy(input, &mut &mut mem[..])?; //TODO: When mapped_file is updated to add `inner_mut()`, use that instead of the mapped array as destination (gives access to splice et all.)
 		},
 	    _ => (),
 	}
@@ -274,10 +274,10 @@ impl<T: io::Read+AsRawFd, U: io::Write+AsRawFd> OpTable<T, U>
     {
 	match self {
 	    Self::Both(_, output) => drop(output.flush(mapped_file::Flush::Wait)?),
-	    Self::Input(_, mut mem, mut output) => drop(std::io::copy(&mut &mem[..], &mut output)?), //TODO: When mapped_file is updated to add `inner_mut()`, use that instead of the mapped array as source (gives access to splice et all.)
-	    Self::Output(_, _, mut output) => drop(output.flush(mapped_file::Flush::Wait)?),
+	    Self::Input(_, ref mut mem, ref mut output) => drop(std::io::copy(&mut &mem[..], output)?), //TODO: When mapped_file is updated to add `inner_mut()`, use that instead of the mapped array as source (gives access to splice et all.)
+	    Self::Output(_, _, ref mut output) => drop(output.flush(mapped_file::Flush::Wait)?),
 	    Self::Neither(_, stream) => stream.flush()?,
-	    _ => (),
+	    //_ => (),
 	}
 	Ok(())
     }
@@ -286,30 +286,57 @@ impl<T: io::Read+AsRawFd, U: io::Write+AsRawFd> OpTable<T, U>
     {
 	self.pre_process()?;
 	let mode: &mut Crypter = mode.borrow_mut();
-	match self {
-	    Self::Both(mut input, mut output) => {
+	match &mut self {
+	    Self::Both(input, output) => {
 		let len = std::cmp::min(input.len(), output.len());
-		process_mapped_files(mode, &mut input, &mut output)?;
+		process_mapped_files(mode, input, output)?;
 		
 		self.post_process()?;
 		Ok(len)
 	    },
-	    Self::Input(mut input, mut output, _) => {
+	    Self::Input(input, output, _) => {
 		let len = std::cmp::min(input.len(), output.len());
-		process_mapped_files(mode, &mut input, &mut output)?;
+		process_mapped_files(mode, input, output)?;
 
 		self.post_process()?;
 		Ok(len)
 	    },
-	    Self::Output(_, mut input, mut output) => {
+	    Self::Output(_, input, output) => {
 		let len = std::cmp::min(input.len(), output.len());
-		process_mapped_files(mode, &mut input, &mut output)?;
+		process_mapped_files(mode, input, output)?;
 
 		self.post_process()?;
 		Ok(len)
 	    },
 	    Self::Neither(sin, sout) => {
 		const BUFFER_SIZE: usize = 1024*1024;
+		enum CowMut<'a, T: ?Sized + ToOwned>  {
+		    Borrowed(&'a mut T),
+		    Owned(<T as ToOwned>::Owned),
+		}
+		impl<'a, T: ?Sized + ToOwned> ops::Deref for CowMut<'a, T>
+		{
+		    type Target = T;
+		    #[inline] 
+		    fn deref(&self) -> &Self::Target {
+			match self {
+			    Self::Borrowed(b) => b,
+			    Self::Owned(b) => b.borrow(),
+			}
+		    }
+		}
+		
+		impl<'a, T: ?Sized + ToOwned> ops::DerefMut for CowMut<'a, T>
+		    where T::Owned: BorrowMut<T>,
+		{
+		    #[inline] 
+		    fn deref_mut(&mut self) -> &mut Self::Target {
+			match self {
+			    Self::Borrowed(b) => b,
+			    Self::Owned(b) => b.borrow_mut(),
+			}
+		    }
+		}
 		macro_rules! try_allocmem {
 		    ($size:expr) => {
 			{
@@ -322,13 +349,15 @@ impl<T: io::Read+AsRawFd, U: io::Write+AsRawFd> OpTable<T, U>
 			}
 		    };
 		    ($mem:expr, $size:expr) => {
-			$mem.map(|x| Cow::Borrowed(&mut x[..])).unwrap_or_else(|| Cow::Owned(vec![0u8; $size]))
+			$mem.as_mut().map(|x| CowMut::Borrowed(&mut x[..])).unwrap_or_else(|| CowMut::Owned(vec![0u8; $size]))
 		    }
 		}
+		
 		let mut _mem = try_allocmem!(BUFFER_SIZE);
 		let mut _memo = try_allocmem!(BUFFER_SIZE);
 		let mut buffer = try_allocmem!(_mem, BUFFER_SIZE);
 		let mut buffero = try_allocmem!(_memo, BUFFER_SIZE);
+		
 		let mut read =0;
 		let mut cur;
 		while { cur = sin.read(&mut buffer[..])?; cur > 0 } {
@@ -466,7 +495,7 @@ pub fn try_create_process<T: AsRawFd, U: AsRawFd>(from: T, to: U) -> Result<OpTa
 
 pub fn try_process(_mode: impl BorrowMut<Crypter>) -> io::Result<io::Result<()>>
 {
-    todo!("use `try_create_process()`")
+    todo!("use `try_create_process()`") //XXX: <- next thing to do is integrate the above function into the caller for this (the old impl) one
 }
 
     #[cfg(feature="try_process-old")] 
