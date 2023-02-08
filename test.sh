@@ -8,6 +8,7 @@ mkdir -p test || exit -1
 cd test || exit -1
 
 PROG=../target/${1:-release}/chacha20
+TEST_ENV="${TEST_ENV:-""}"
 
 if [[ ! -f $PROG ]]; then
 	echo "Couldn't find executable \"$PROG\""
@@ -27,9 +28,9 @@ KEYS=$($PROG k)
 echo "$KEYS"
 
 echo ">>> Encrypting"
-time $PROG e $KEYS  < test.txt  > test.cc20    || exit 1
+time $TEST_ENV $PROG e $KEYS  < test.txt  > test.cc20    || exit 1
 echo ">>> Decrypting"
-time $PROG d $KEYS  < test.cc20 > test.out.txt || exit 2
+time $TEST_ENV $PROG d $KEYS  < test.cc20 > test.out.txt || exit 2
 
 echo ">>> Comparing"
 echo "Input (SHA256 sum):	$(sha256sum test.txt)"
