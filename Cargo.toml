@@ -11,6 +11,10 @@ default = ["mmap"]
 
 # Try to map inputs/outputs before using buffers
 mmap = ["libc"]
+# Forcefully map all output real files.
+# This is unsafe because we cannot distinguish the offset at which to map the file descriptor, or if there even is one.
+unsafe-mappings = ["mmap"]
+
 # Explicitly clear buffers and cache after use
 explicit_clear = []
 

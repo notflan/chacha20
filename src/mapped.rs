@@ -169,10 +169,12 @@ fn translate_hugetlb_size(size: usize) -> mapped_file::hugetlb::HugePage
     }
     const MB: usize = 1024*1024;
     const GB: usize = 1024 * MB;
+    
+    #[allow(overlapping_range_endpoints)]
     match size {
 	0..=MB => mapped_file::hugetlb::HugePage::Smallest,
 	MB..=GB => mapped_file::hugetlb::HugePage::Selected(check_func),
-	very_high => mapped_file::hugetlb::HugePage::Largest,
+	_very_high => mapped_file::hugetlb::HugePage::Largest,
     }
 }
 
@@ -195,7 +197,7 @@ fn create_sized_temp_mapping_at<const HUGE: bool>(size: usize) -> io::Result<(Ma
 {
     const HUGETLB_THRESH: usize = 1024 * 1024; // 1MB
     let file = match size {
-	0..=HUGETLB_THRESH => MemoryFile::with_size(size),
+	1..=HUGETLB_THRESH => MemoryFile::with_size(size),
 	size if HUGE => {
 	    let hugetlb = translate_hugetlb_size(size);
 	    let file = if let Some(flag) =hugetlb.compute_huge() {
@@ -221,6 +223,7 @@ type MappedMemoryFile = MappedFile<mapped_file::file::memory::MemoryFile>;
 
 /// How a mapped operation should optimally take place
 //TODO: Make optimised mapping operations for each one, like `fn process(self, enc: &mut Crypter) -> io::Result<usize>`
+#[derive(Debug)]
 pub enum OpTable<T, U>
 {
     /// Both input and output are mapped
@@ -383,10 +386,23 @@ fn sized_then_or<T: AsRawFd, U, F>(stream: T, trans: F) -> Result<U, T>
 
 #[inline] 
 fn map_size_or<T: AsRawFd, U, F>(stream: T, size: usize, trans: F) -> Result<U, T>
-    where F: FnOnce(MappedFile<T>, usize) -> U
+where F: FnOnce(MappedFile<T>, usize) -> U
 {
     if try_map_to(&stream, size) {
 	// Sized
+	if cfg!(feature="unsafe-mappings") {
+	    // Ensure the output file is open for writing
+	    // XXX: This is not safe, we can't tell if it's a new file being created or if it's appending. I dunno how to find out, lseek doesn't say.
+	    if let Err(err) = reopen_rw(&stream) {
+		// If this fails, we cannot map it.
+		if cfg!(debug_assertions) {
+		    eprintln!("Warning: Failed to re-open stdout: {}", err);
+		}
+		return Err(stream);
+	    }
+	}
+	
+	// Then map read+write
 	match MappedFile::try_new(stream, size, Perm::ReadWrite, Flags::Shared) {
 	    Ok(map) => Ok(trans(map, size)),
 	    Err(e) => Err(e.into_inner()),
@@ -432,7 +448,16 @@ impl fmt::Debug for ProcessError
 	    .finish_non_exhaustive()
     }
 }
-impl error::Error for ProcessError{}
+impl error::Error for ProcessError
+{
+    #[inline] 
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+	Some(match self.kind {
+	    ProcessErrorKind::IO(ref io) => io,
+	    _ => return None
+	})
+    }
+}
 impl fmt::Display for ProcessError
 {
     #[inline] 
@@ -456,10 +481,58 @@ impl From<io::Error> for ProcessError
     }
 }
 
+impl ProcessError
+{
+    #[inline] 
+    pub fn context_mut(&mut self) -> Option<&mut Dynamic>
+    {
+	self.context.as_deref_mut()
+    }
+    #[inline] 
+    pub fn into_context(self) -> Option<Box<Dynamic>>
+    {
+	self.context
+    }
+    #[inline] 
+    pub fn context(&self) -> Option<&Dynamic>
+    {
+	self.context.as_deref()
+    }
+}
 
+/// Reopen a file-descriptor as read+write.
+pub fn reopen_rw(fd: &(impl AsRawFd+?Sized)) -> io::Result<()>
+{
+    let fd = fd.as_raw_fd();
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(format!("/proc/self/fd/{fd}"))?;
+
+    // Attempt to seek new fd to old's position, this is important
+    if unsafe {
+	let size = libc::lseek(fd, 0, libc::SEEK_CUR);
+	
+	libc::lseek(file.as_raw_fd(), match size {
+	    -1 => return Err(io::Error::last_os_error()),
+	    v => v,
+	}, libc::SEEK_SET)
+    } < 0 {
+	return Err(io::Error::last_os_error());
+    }
+    
+    // File descriptor set up to track accurately
+    unsafe {
+	let res = libc::dup2(file.as_raw_fd(), fd);
+	if res < 0 {
+	    return Err(io::Error::last_os_error());
+	}
+	Ok(())
+    }
+}
 
 /// Create an optimised call table for the cryptographic transformation from `from` to `to`.
-pub fn try_create_process<T: AsRawFd, U: AsRawFd>(from: T, to: U) -> Result<OpTable<T, U>, ProcessError>
+pub fn try_create_process<T: AsRawFd + io::Read, U: AsRawFd + io::Write>(from: T, to: U) -> Result<OpTable<T, U>, ProcessError>
 {
     let (input, buffsz) = match sized_then_or(from, |input, input_size| {
 	(match MappedFile::try_new(input, input_size, Perm::Readonly, Flags::Private) {
@@ -493,9 +566,17 @@ pub fn try_create_process<T: AsRawFd, U: AsRawFd>(from: T, to: U) -> Result<OpTa
     })
 }
 
-pub fn try_process(_mode: impl BorrowMut<Crypter>) -> io::Result<io::Result<()>>
+#[inline]
+//TODO: Add metrics, status, progress, diagnostics, etc. reporting
+pub fn try_process(mode: impl BorrowMut<Crypter>) -> Result<usize, ProcessError>
 {
-    todo!("use `try_create_process()`") //XXX: <- next thing to do is integrate the above function into the caller for this (the old impl) one
+    let sin = io::stdin().lock();
+    let sout = io::stdout().lock();
+    let proc = try_create_process(sin, sout)?;
+    if cfg!(debug_assertions) {
+	eprintln!("Process is: {:?}", proc);
+    }
+    Ok(proc.execute(mode)?)
 }
 
     #[cfg(feature="try_process-old")] 
